@@ -2,64 +2,75 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import os
 
 # 페이지 설정
-st.set_page_config(page_title="Global MBTI Dashboard", layout="wide")
+st.set_page_config(page_title="국가별 MBTI 분석", layout="wide")
 
+# 데이터 로드 함수 (파일 경로 오류 방지)
 @st.cache_data
 def load_data():
-    # 데이터 로드
-    df = pd.read_csv('countriesMBTI_16types.csv')
-    return df
+    file_name = 'countriesMBTI_16types.csv'
+    if os.path.exists(file_name):
+        return pd.read_csv(file_name)
+    else:
+        st.error(f"⚠️ '{file_name}' 파일을 찾을 수 없습니다. GitHub 저장소에 파일이 있는지 확인해주세요.")
+        return None
 
-try:
-    df = load_data()
+df = load_data()
 
-    st.title("🌍 국가별 MBTI 분포 탐색기")
-    st.markdown("데이터에서 국가를 선택하면 해당 국가의 MBTI 유형별 비율을 확인할 수 있습니다.")
+if df is not None:
+    st.title("📊 국가별 MBTI 분포 시각화")
+    st.info("국가를 선택하면 실시간으로 해당 국가의 MBTI 비중을 분석합니다.")
 
-    # 1. 국가 선택 셀렉트박스
-    countries = df['Country'].unique()
-    selected_country = st.selectbox("분석할 국가를 선택하세요", countries)
+    # 사이드바에서 국가 선택
+    countries = sorted(df['Country'].unique())
+    selected_country = st.selectbox("분석하고 싶은 국가를 선택하세요", countries)
 
-    # 2. 선택된 국가 데이터 추출 및 재구조화
-    country_data = df[df['Country'] == selected_country].drop(columns=['Country']).T
-    country_data.columns = ['Percentage']
-    country_data = country_data.sort_values(by='Percentage', ascending=False).reset_index()
-    country_data.columns = ['MBTI', 'Percentage']
+    # 선택된 국가 데이터 정리 (비율 높은 순)
+    row = df[df['Country'] == selected_country].drop(columns=['Country']).iloc[0]
+    viz_df = row.reset_index()
+    viz_df.columns = ['MBTI', 'Ratio']
+    viz_df = viz_df.sort_values(by='Ratio', ascending=False)
 
-    # 3. 색상 설정 (1위는 빨강, 나머지는 파란색 그라데이션)
-    # Plotly의 시퀀셜 컬러차트를 활용하여 데이터 개수만큼 색상 추출
-    colors = ['#EF553B'] + px.colors.sequential.Blues_r[2:17] 
-    # 데이터 행 수에 맞춰 색상 리스트 길이 조정
-    final_colors = colors[:len(country_data)]
+    # 색상 설정 (1등은 빨간색, 나머지는 파란색 그라데이션)
+    # n개의 파란색 계열 색상 추출
+    n_types = len(viz_df)
+    blue_colors = px.colors.sequential.Blues_r[2:12] # 진한 파랑 계열
+    # 1등을 위한 빨간색 + 나머지 파란색 리스트 생성
+    colors = ['#FF4B4B'] + [blue_colors[i % len(blue_colors)] for i in range(n_types - 1)]
 
-    # 4. 플로틀리 차트 생성
+    # Plotly 차트 생성
     fig = go.Figure(data=[
         go.Bar(
-            x=country_data['MBTI'],
-            y=country_data['Percentage'],
-            marker_color=final_colors,
-            text=country_data['Percentage'].apply(lambda x: f'{x*100:.1f}%'),
-            textposition='auto',
+            x=viz_df['MBTI'],
+            y=viz_df['Ratio'],
+            marker_color=colors,
+            text=viz_df['Ratio'].apply(lambda x: f'{x*100:.1f}%'),
+            textposition='outside',
+            hovertemplate='MBTI: %{x}<br>비중: %{y:.2%}<extra></extra>'
         )
     ])
 
     fig.update_layout(
-        title=f"<b>{selected_country}</b>의 MBTI 유형 분포 (높은 순)",
+        title=dict(text=f"<b>{selected_country}</b>의 MBTI 유형별 점유율", font=dict(size=20)),
         xaxis_title="MBTI 유형",
-        yaxis_title="비율 (1.0 = 100%)",
-        template="plotly_white",
-        height=600,
-        yaxis=dict(tickformat=".0%")
+        yaxis_title="비율",
+        yaxis=dict(tickformat=".0%"),
+        height=550,
+        margin=dict(l=20, r=20, t=60, b=20),
+        template="plotly_white"
     )
 
-    # 5. 스트림릿에 출력
+    # 차트 출력
     st.plotly_chart(fig, use_container_width=True)
 
-    # 6. 상세 데이터 표
-    with st.expander("상세 데이터 보기"):
-        st.dataframe(country_data.style.format({'Percentage': '{:.2%}'}))
-
-except FileNotFoundError:
-    st.error("파일을 찾을 수 없습니다. 'countriesMBTI_16types.csv' 파일이 같은 경로에 있는지 확인해주세요.")
+    # 하단 데이터 요약
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("✅ 주요 특징")
+        top_type = viz_df.iloc[0]['MBTI']
+        top_val = viz_df.iloc[0]['Ratio']
+        st.write(f"**{selected_country}**에서 가장 흔한 유형은 **{top_type}**이며, 전체의 **{top_val:.1%}.**를 차지합니다.")
+    
+    with col2
